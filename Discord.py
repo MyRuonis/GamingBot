@@ -25,6 +25,8 @@ emojiIDs['MASTER'] = 666290836656357376
 emojiIDs['GRANDMASTER'] = 666290969292963860
 emojiIDs['CHALLENGER'] = 666291097294733317
 
+atsakymai = ["Yes", "No", "I do not know that", "<:CHALLENGER:666291097294733317>", "Try again"]
+
 class MyClient(discord.Client):
     def getSummonerLink(self, name):
         return lolApiLink + lolSummoner + name + "?api_key=" + lolApiKey
@@ -77,7 +79,7 @@ class MyClient(discord.Client):
 
             output = 'Team RED:\n'
             for i in range(int((len(lst)-1) /2)):
-                place = random.randint(2, len(lst)-1)
+                place = random.randint(1, len(lst)-1)
                 output += lst[place] + " "
                 lst.remove(lst[place])
 
@@ -131,6 +133,13 @@ class MyClient(discord.Client):
                 output += self.formPlayerOutput(item) + "\n"
 
             await message.channel.send(output)
+            return
+
+        if(message.content.startswith("?q")):
+            # returns a random answer to a question
+            # ?q Question
+            place = random.randint(1, len(atsakymai)-1)
+            await message.channel.send(atsakymai[place])
             return
 
             
