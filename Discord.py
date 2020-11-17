@@ -1,18 +1,18 @@
 import discord
 import random
 import json
-from riotwatcher import RiotWatcher, ApiError
+import requests
 
 dataRead = open("keys.txt", 'r')
 data = dataRead.read().splitlines()
 dataRead.close()
 
 discordKey = data[0]
-lolKey = data[1]
-region = data[2]
-
-riotGamesApi = RiotWatcher(lolKey)
-my_region = region
+lolApiKey = data[1]
+lolRegion = data[2]
+lolApiLink = "https://" + lolRegion + ".api.riotgames.com"
+lolSummoner = "/lol/summoner/v4/summoners/by-name/"
+lolLeague = "/lol/league/v4/entries/by-summoner/"
 
 emojiIDs = {}
 emojiIDs['IRON'] = 666289575630602250
@@ -26,35 +26,43 @@ emojiIDs['GRANDMASTER'] = 666290969292963860
 emojiIDs['CHALLENGER'] = 666291097294733317
 
 class MyClient(discord.Client):
-    def getStats(self, nickname):
-        try:
-            player = riotGamesApi.summoner.by_name(my_region, nickname)
-            ranked_stats = riotGamesApi.league.by_summoner(my_region, player['id'])
+    def getSummonerLink(self, name):
+        return lolApiLink + lolSummoner + name + "?api_key=" + lolApiKey
 
-            if(not ranked_stats):
-                return {}
-            for stat in ranked_stats:
-                if stat['queueType'] == "RANKED_SOLO_5x5":
-                    return stat
-                
-        except ApiError as err:
-            if err.response.status_code == 429:
-                print('We should retry in {} seconds.'.format(err.response.headers['Retry-After']))
-            elif err.response.status_code == 404:
-                print('Name not found')
+    def getLeagueLink(self, id):
+        return lolApiLink + lolLeague + id + "?api_key=" + lolApiKey
 
-        return {}
-    
-    def output(self, **info):
-        return info['summonerName'] + " <:" + info['tier'].lower() + ":" + str(emojiIDs[info['tier']]) + "> " + info['rank'] + " (" + str(info['leaguePoints']) + "lp) (" + str(info['sortValue']) + ")"
+    def getPlayerInfo(self, nickName):
+        req = requests.get(self.getSummonerLink(nickName))
+        reqInfo = json.loads(req.content)
+        req = requests.get(self.getLeagueLink(reqInfo['id']))
+        reqInfo = json.loads(req.content)
+        for item in reqInfo:
+            if item['queueType'] == 'RANKED_SOLO_5x5':
+                return item
 
-    def convert(self, number):
-        if(len(number) != 2):
-            if(len(number) == 3): return 1
-            else: return 3
-        if(number[1] == 'V'): return 0
-        return 2
-        
+    def formPlayerOutput(self, info):
+        emo = "<:" + info['tier'] + ":" + str(emojiIDs[info['tier']]) + ">"
+        output = emo + " " + info['summonerName'] + " " + info['tier'] + " " + info['rank'] + " " + str(info['leaguePoints']) + "lp"
+        return output
+
+    def rankValue(self, info):
+        val = int(info['leaguePoints'])
+
+        if(info['rank'] == 'III'): val += 100
+        elif(info['rank'] == 'II'): val += 200
+        elif(info['rank'] == 'I'): val += 300
+
+        if(info['tier'] == "IRON"): val += 0
+        elif(info['tier'] == "BRONZE"): val += 500
+        elif(info['tier'] == "SILVER"): val += 1000
+        elif(info['tier'] == "GOLD"): val += 1500
+        elif(info['tier'] == "PLATINUM"): val += 2000
+        elif(info['tier'] == "DIAMOND"): val += 2500
+        else: val += 3000
+
+        return val
+
     async def on_ready(self):
         print('Logged on as', self.user)
 
@@ -62,72 +70,69 @@ class MyClient(discord.Client):
         if message.author == self.user:
             return
 
-        if(message.content.startswith("RANDOM")):
+        if(message.content.startswith("?rt")):
+            # returns randomized teams
+            # ?rt player1 player2 player3 ...
             lst = message.content.split( )
 
-            await message.channel.send('Team RED: ')
+            output = 'Team RED:\n'
             for i in range(int((len(lst)-1) /2)):
                 place = random.randint(2, len(lst)-1)
-                await message.channel.send(lst[place] + " ")
+                output += lst[place] + " "
                 lst.remove(lst[place])
 
-            await message.channel.send('Team BLUE: ')
+            output += "\nTeam BLUE:\n"
             i = 1
             while (i < len(lst)):
-                await message.channel.send(lst[i] + " ")
+                output += lst[i] + " "
                 i = i + 1
+
+            await message.channel.send(output)
 
             return
 
-        if(message.content.startswith("RandNMB")):
+        if(message.content.startswith("?rn")):
+            # returns a random number between num1 and num2
+            # ?rn num1 num2
             lst = message.content.split( )
             mess = random.randint(int(lst[1]), int(lst[2]))
             await message.channel.send(str(mess))
             return
         
         if(message.content.startswith("?elo")):
+            # returns players rank info in eune
+            # ?elo MyRuonis
             lst = message.content.split( )
-            mess = message.content
-            name = ""
+            info = self.getPlayerInfo(lst[1])
+            output = self.formPlayerOutput(info)
 
-            for i in range(0, len(mess)-5):
-                name += mess[i+5]            
-
-            statistics = self.getStats(name)
-
-            if(statistics == {}): await message.channel.send("No Solo/Duo rank found")
-            else: await message.channel.send(self.output(**statistics))
-
+            await message.channel.send(output)
             return
-
+        
         if(message.content.startswith("?rankings")):
-            dataRead = open("players.txt", 'r')
-            data = dataRead.read().splitlines()
+            # returns players ranking in players.txt
+            # ?rankings
+            fr = open("players.txt", 'r')
+            info = fr.read().splitlines()
+            fr.close()
 
-            stats = []
-            for player in data:
-                info = self.getStats(player)
-                if(info != {}): stats.append(info)
-            
-            ranks = ['IRON', 'BRONZE', 'SILVER', 'GOLD', 'PLATINUM', 'DIAMOND', 'MASTER', 'GRAND MASTER', 'CHALLENGER']
-            
-            for stat in stats:
-                for i in range(len(ranks)-1):
-                    if ranks[i] == stat['tier']:
-                        stat['sortValue'] = i*404 + self.convert(stat['rank'])*101 + stat['leaguePoints']
-                        break
-            
-            stats = sorted(stats, key=lambda k: k['sortValue'], reverse=True)
+            arr = [dict() for x in range(len(info))]
+            for i in range(len(info)):
+                obj = self.getPlayerInfo(info[i])
+                arr[i] = obj
 
-            out = ""
-            
-            for stat in stats:
-                out += self.output(**stat) + "\n"
+            for item in arr:
+                item["rankValue"] = self.rankValue(item)
 
-            if(out == ""): await message.channel.send("No ranks")
-            else: await message.channel.send(out)
-            
+            arr = sorted(arr, key = lambda i: i['rankValue'], reverse=True)
+
+            output = ""
+            for item in arr:
+                output += self.formPlayerOutput(item) + "\n"
+
+            await message.channel.send(output)
             return
+
             
 
 client = MyClient()
