@@ -2,6 +2,7 @@ import discord
 import random
 import json
 import requests
+from bs4 import BeautifulSoup
 
 dataRead = open("keys.txt", 'r')
 data = dataRead.read().splitlines()
@@ -13,6 +14,11 @@ lolRegion = data[2]
 lolApiLink = "https://" + lolRegion + ".api.riotgames.com"
 lolSummoner = "/lol/summoner/v4/summoners/by-name/"
 lolLeague = "/lol/league/v4/entries/by-summoner/"
+
+#to add:
+#clash-v1
+#match-v4 + champion-mastery-v4
+#spectator-v4
 
 emojiIDs = {}
 emojiIDs['IRON'] = 666289575630602250
@@ -138,11 +144,37 @@ class MyClient(discord.Client):
         if(message.content.startswith("?q")):
             # returns a random answer to a question
             # ?q Question
-            place = random.randint(1, len(atsakymai)-1)
+            place = random.randint(0, len(atsakymai)-1)
             await message.channel.send(atsakymai[place])
+
             return
 
-            
+        if(message.content.startswith("?h")):
+            output = "?h - help\n?q Qestion - the bot will answer\n?rt Player1 PLayer2 ... - random team generation\n?rn From To - random number generation\n?elo player - player rank in eune\n?rankings - player ranking list(eune)\n?nickAvailable Nick - shows when the name will be available(eune)\n"
+
+            await message.channel.send(output)
+            return
+
+        if(message.content.startswith("?nickAvailable")):
+            lst = lst = message.content.split( )
+            req = requests.get("https://lolnames.gg/en/eune/" + lst[1] + "/")
+            soup = BeautifulSoup(req.content, 'html.parser')
+            where = soup.findAll("h4")
+            where = str(where[0])
+
+            fr = 24
+            output = ""
+            while(where[fr] != '<'):
+                output += where[fr]
+                fr += 1
+
+            if (output[len(output)-1] == '!'):
+                output = "```diff\n+" + output + "```"
+            else:
+                output = "```diff\n-" + output + "```"
+
+            await message.channel.send(output)
+            return
 
 client = MyClient()
 client.run(discordKey)
